@@ -162,7 +162,7 @@ export default function Store() {
         </select>
       </div>
 
-      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(220px, 260px))", justifyContent: "center", gap: 30, marginTop: 16 }}>
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(220px, 260px))", justifyContent: "center", gap: 60, marginTop: 16 }}>
         {displayGames.length === 0 ? (
           <div style={{ opacity: 0.7 }}>No games found.</div>
         ) : (

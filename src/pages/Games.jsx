@@ -94,7 +94,7 @@ export default function Games() {
           display: "grid",
           gridTemplateColumns: "repeat(auto-fill, minmax(220px, 260px))",
           justifyContent: "center",
-          gap: 30,
+          gap: 60,
           marginTop: 16,
         }}
       >

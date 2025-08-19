@@ -23,7 +23,7 @@ export default function Apps() {
         style={{
           display: "grid",
           gridTemplateColumns: "repeat(4, minmax(0, 1fr))",
-          gap: 30,
+          gap: 60,
           marginTop: 16,
         }}
       >
