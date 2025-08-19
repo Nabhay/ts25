@@ -1,45 +1,136 @@
 import React from "react";
+import { useNavigate } from "react-router-dom";
 
+// Social: merged Friends + DM Chat in a clean two-column layout
 export default function Chat() {
-  const [channels, setChannels] = React.useState([]);
-  const [activeId, setActiveId] = React.useState(null);
+  const user = React.useMemo(() => JSON.parse(localStorage.getItem("currentUser") || "null"), []);
+
+  // Friends and presence
+  const [friends, setFriends] = React.useState([]);
+  const [incoming, setIncoming] = React.useState([]); // friend requests to me (pending)
+  const [outgoing, setOutgoing] = React.useState([]); // friend requests I sent (pending)
+  const [search, setSearch] = React.useState("");
+  const [addName, setAddName] = React.useState("");
+  const navigate = useNavigate();
+
+  // Chat state
+  const [activeFriend, setActiveFriend] = React.useState(null);
+  const [channelId, setChannelId] = React.useState(null);
   const [messages, setMessages] = React.useState([]);
   const [text, setText] = React.useState("");
-  const [newName, setNewName] = React.useState("");
-  const [newMembers, setNewMembers] = React.useState("");
-  const [members, setMembers] = React.useState([]);
-  const [addMember, setAddMember] = React.useState("");
-  const [showCreateModal, setShowCreateModal] = React.useState(false);
-
-  const pollRef = React.useRef(null);
   const listEndRef = React.useRef(null);
+  const pollRef = React.useRef(null);
   const lastIdRef = React.useRef(0);
   const [visible, setVisible] = React.useState(typeof document !== "undefined" ? document.visibilityState === "visible" : true);
 
-  const user = React.useMemo(() => JSON.parse(localStorage.getItem("currentUser") || "null"), []);
+  // Simulated presence / now playing
+  const gamePool = React.useMemo(
+    () => [
+      { id: 1001, name: "Neon Rift" },
+      { id: 1002, name: "Arcane Runner" },
+      { id: 1003, name: "Starforge" },
+      { id: 1004, name: "Shadow Vale" },
+      { id: 1005, name: "Eclipse Odyssey" },
+      { id: 1006, name: "Crimson Tactics" },
+    ],
+    []
+  );
+  const [playingMap, setPlayingMap] = React.useState({});
+  const rngPick = React.useCallback(() => gamePool[Math.floor(Math.random() * gamePool.length)], [gamePool]);
 
-  const loadChannels = React.useCallback(async () => {
+  const loadFriends = React.useCallback(() => {
     if (!user?.username) return;
-    const res = await fetch(`/api/channels/${encodeURIComponent(user.username)}`);
-    const list = await res.json();
-    setChannels(list);
-    if (!activeId && list.length) setActiveId(list[0].id);
-  }, [user, activeId]);
+    fetch(`/api/friends/${user.username}`)
+      .then((r) => r.json())
+      .then((rows) => setFriends(rows.map((u) => ({ username: u }))))
+      .catch(() => setFriends([]));
+  }, [user]);
 
-  React.useEffect(() => { loadChannels(); }, [loadChannels]);
+  const loadRequests = React.useCallback(() => {
+    if (!user?.username) return;
+    fetch(`/api/friend_requests/${user.username}`)
+      .then((r) => r.json())
+      .then((data) => {
+        setIncoming(Array.isArray(data.incoming) ? data.incoming : []);
+        setOutgoing(Array.isArray(data.outgoing) ? data.outgoing : []);
+      })
+      .catch(() => {
+        setIncoming([]);
+        setOutgoing([]);
+      });
+  }, [user]);
 
-  const loadMessages = React.useCallback(async () => {
-    if (!activeId) return;
-    const res = await fetch(`/api/channels/${activeId}/messages`);
-    const list = await res.json();
-    setMessages(list.slice().reverse());
-  }, [activeId]);
-
-  React.useEffect(() => { loadMessages(); }, [loadMessages]);
+  React.useEffect(() => { loadFriends(); loadRequests(); }, [loadFriends, loadRequests]);
 
   React.useEffect(() => {
-    lastIdRef.current = messages.length ? messages[messages.length - 1].id : 0;
-  }, [messages]);
+    if (!friends.length) return;
+    setPlayingMap((prev) => {
+      const next = { ...prev };
+      for (const f of friends) {
+        if (!next[f.username]) next[f.username] = rngPick();
+      }
+      return next;
+    });
+  }, [friends, rngPick]);
+
+  const addFriend = async () => {
+    if (!addName.trim() || !user?.username) return;
+    const res = await fetch(`/api/friend_requests`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ from: user.username, to: addName.trim() }),
+    });
+    if (res.ok) {
+      setAddName("");
+      loadRequests();
+    }
+  };
+
+  const acceptRequest = async (reqId) => {
+    if (!reqId) return;
+    const res = await fetch(`/api/friend_requests/${reqId}/accept`, { method: "POST" });
+    if (res.ok) {
+      loadFriends();
+      loadRequests();
+    }
+  };
+
+  const declineRequest = async (reqId) => {
+    if (!reqId) return;
+    const res = await fetch(`/api/friend_requests/${reqId}/decline`, { method: "POST" });
+    if (res.ok) {
+      loadRequests();
+    }
+  };
+
+  const ensureDmChannel = async (friendName) => {
+    if (!user?.username || !friendName) return null;
+    const a = user.username;
+    const b = friendName;
+    const dmName = `dm:${[a, b].sort().join(",")}`;
+    const res = await fetch(`/api/channels/${encodeURIComponent(user.username)}`);
+    const chans = await res.json();
+    let dm = chans.find((c) => c.name === dmName);
+    if (!dm) {
+      const cRes = await fetch(`/api/channels`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ name: dmName, createdBy: user.username, members: [friendName] }),
+      });
+      if (cRes.ok) dm = await cRes.json();
+    }
+    return dm?.id || null;
+  };
+
+  const loadMessages = React.useCallback(async () => {
+    if (!channelId) return;
+    const res = await fetch(`/api/channels/${channelId}/messages`);
+    const list = await res.json();
+    setMessages(list);
+  }, [channelId]);
+
+  React.useEffect(() => { loadMessages(); }, [loadMessages]);
+  React.useEffect(() => { lastIdRef.current = messages.length ? messages[messages.length - 1].id : 0; }, [messages]);
 
   React.useEffect(() => {
     const handler = () => setVisible(document.visibilityState === "visible");
@@ -47,227 +138,325 @@ export default function Chat() {
     return () => document.removeEventListener("visibilitychange", handler);
   }, []);
 
-  const loadMembers = React.useCallback(async () => {
-    if (!activeId) return;
-    const res = await fetch(`/api/channels/${activeId}/members`);
-    const list = await res.json();
-    setMembers(list);
-  }, [activeId]);
-
-  React.useEffect(() => { loadMembers(); }, [loadMembers]);
-
   React.useEffect(() => {
-    if (!activeId || !visible) return;
+    if (!channelId || !visible) return;
     if (pollRef.current) clearInterval(pollRef.current);
     pollRef.current = setInterval(async () => {
-      const res = await fetch(`/api/channels/${activeId}/messages?sinceId=${lastIdRef.current}`);
+      const res = await fetch(`/api/channels/${channelId}/messages?sinceId=${lastIdRef.current}`);
       if (res.ok) {
         const more = await res.json();
         if (more.length) setMessages((prev) => [...prev, ...more]);
       }
     }, 10000);
     return () => { if (pollRef.current) clearInterval(pollRef.current); };
-  }, [activeId, visible]);
+  }, [channelId, visible]);
 
   React.useEffect(() => {
     listEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages]);
 
+  const openChat = async (friend) => {
+    setActiveFriend(friend.username);
+    const id = await ensureDmChannel(friend.username);
+    setChannelId(id);
+  };
+
   const send = async () => {
-    if (!text.trim() || !activeId || !user?.username) return;
-    await fetch(`/api/channels/${activeId}/messages`, {
+    if (!text.trim() || !channelId || !user?.username) return;
+    await fetch(`/api/channels/${channelId}/messages`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ sender: user.username, text }),
     });
     setText("");
     const lastId = messages.length ? messages[messages.length - 1].id : 0;
-    const res = await fetch(`/api/channels/${activeId}/messages?sinceId=${lastId}`);
+    const res = await fetch(`/api/channels/${channelId}/messages?sinceId=${lastId}`);
     const more = await res.json();
     setMessages((prev) => [...prev, ...more]);
   };
 
-  const createChannel = async () => {
-    if (!newName.trim() || !user?.username) return;
-    const members = newMembers
-      .split(",")
-      .map((s) => s.trim())
-      .filter(Boolean);
-    const res = await fetch(`/api/channels`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ name: newName.trim(), createdBy: user.username, members }),
-    });
-    if (res.ok) {
-      setNewName("");
-      setNewMembers("");
-      await loadChannels();
-      setShowCreateModal(false);
-    }
-  };
+  const filteredFriends = React.useMemo(() => {
+    const q = search.trim().toLowerCase();
+    if (!q) return friends;
+    return friends.filter((f) => f.username.toLowerCase().includes(q));
+  }, [friends, search]);
 
   return (
-    <>
-    <div
-      style={{
-        display: "grid",
-        gridTemplateColumns: "260px 1fr 260px",
-        gap: 12,
-        height: "100dvh",
-        minHeight: "100vh",
-      }}
-    >
-    <div style={{ borderRight: "1px solid #333", paddingRight: 12, overflow: "hidden" }}>
-        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
-      <h2 style={{ margin: 0 }}>Channels</h2>
-          <button
-            title="Create channel"
-            onClick={() => setShowCreateModal(true)}
-            style={{
-        width: 40,
-        height: 40,
-        borderRadius: 10,
-        border: "1px solid #444",
-        background: "#151515",
-        color: "#fff",
-        fontSize: 22,
-        display: "flex",
-        alignItems: "center",
-        justifyContent: "center",
-        cursor: "pointer",
-            }}
-          >
-            +
-          </button>
+    <div style={{ 
+      display: "grid", 
+      gridTemplateColumns: "320px 1fr", 
+      gap: 16, 
+  height: "calc(100dvh - 72px - 24px)",
+  overflow: "hidden",
+      color: "#fff",
+      fontFamily: "system-ui, -apple-system, sans-serif"
+    }}>
+      {/* People column */}
+      <div style={{ 
+        background: "#1f1f1f", 
+        border: "1px solid #333", 
+        borderRadius: 12, 
+        padding: 12, 
+        overflow: "auto",
+        minHeight: 0
+      }}>
+        <div style={{ 
+          display: "flex", 
+          alignItems: "center", 
+          justifyContent: "space-between", 
+          marginBottom: 10 
+        }}>
+          <h2 style={{ 
+            margin: 0, 
+            fontSize: 16, 
+            color: "#fff" 
+          }}>People</h2>
         </div>
-    <div style={{ display: "flex", flexDirection: "column", gap: 6, marginTop: 8, height: "calc(100% - 56px)", overflow: "auto", paddingRight: 6 }}>
-          {channels.map((ch) => (
-            <button
-              key={ch.id}
-              onClick={() => setActiveId(ch.id)}
-              style={{
-                textAlign: "left",
-                padding: "8px 10px",
-                borderRadius: 8,
-        border: "1px solid #333",
-        background: activeId === ch.id ? "#222" : "#111",
-                color: "#fff",
-              }}
-            >
-              #{ch.name}
-            </button>
-          ))}
-        </div>
-      </div>
-      <div style={{ display: "flex", flexDirection: "column", minHeight: 0 }}>
-        <h2 style={{ marginTop: 0 }}>{activeId ? `Channel #${activeId}` : "Select a channel"}</h2>
-        <div style={{ flex: 1, minHeight: 0, overflow: "auto", border: "1px solid #333", padding: 8, borderRadius: 8, background: "#0f0f0f" }}>
-          {messages.map((m) => (
-            <div key={m.id} style={{ marginBottom: 8 }}>
-              <div style={{ opacity: 0.8, fontSize: 12 }}>{new Date(m.createdAt || Date.now()).toLocaleTimeString()}</div>
-              <div>
-                <strong>{m.sender}:</strong> {m.text}
-              </div>
-            </div>
-          ))}
-          <div ref={listEndRef} />
-        </div>
-        <div style={{ marginTop: 8, display: "flex", gap: 8, alignItems: "center" }}>
-          <button
-            onClick={() => alert("Joining voice call (placeholder)")}
-            title="Join voice call"
-            style={{ border: "1px solid #333", background: "#111", color: "#fff", borderRadius: 8, padding: "6px 10px" }}
-          >
-            Join voice call
-          </button>
+        
+        <div style={{ display: "flex", gap: 8, marginBottom: 8 }}>
           <input
-            value={text}
-            onChange={(e) => setText(e.target.value)}
-            placeholder="Type a message"
-            style={{ flex: 1 }}
-            onKeyDown={(e) => {
-              if (e.key === "Enter") send();
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            placeholder="Search friends"
+            style={{ 
+              flex: 1, 
+              padding: "8px 10px", 
+              borderRadius: 8, 
+              border: "1px solid #333", 
+              background: "#151515", 
+              color: "#fff",
+              fontSize: 14
             }}
           />
-          <button onClick={send} disabled={!activeId}>Send</button>
         </div>
-      </div>
-
-  <div style={{ overflow: "auto" }}>
-        <h3 style={{ marginTop: 0 }}>Members</h3>
-        <ul style={{ listStyle: "none", padding: 0, margin: 0, maxHeight: 320, overflow: "auto" }}>
-          {members.map((m) => (
-            <li key={m} style={{ padding: "6px 8px", border: "1px solid #333", borderRadius: 6, marginBottom: 6 }}>{m}</li>
-          ))}
-          {!members.length && <li style={{ opacity: 0.7 }}>No members</li>}
-        </ul>
-        <div style={{ marginTop: 10 }}>
+        
+        <div style={{ display: "flex", gap: 8, marginBottom: 12 }}>
           <input
-            placeholder="Add member by username"
-            value={addMember}
-            onChange={(e) => setAddMember(e.target.value)}
-            style={{ width: "100%", marginBottom: 6 }}
+            value={addName}
+            onChange={(e) => setAddName(e.target.value)}
+            placeholder="Add friend by username"
+            style={{ 
+              flex: 1, 
+              padding: "8px 10px", 
+              borderRadius: 8, 
+              border: "1px solid #333", 
+              background: "#151515", 
+              color: "#fff",
+              fontSize: 14
+            }}
+            onKeyDown={(e) => { if (e.key === "Enter") addFriend(); }}
           />
-          <button
-            disabled={!activeId || !addMember.trim()}
-            onClick={async () => {
-              if (!activeId || !addMember.trim()) return;
-              const res = await fetch(`/api/channels/${activeId}/members`, {
-                method: "POST",
-                headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({ username: addMember.trim() }),
-              });
-              if (res.ok) {
-                setAddMember("");
-                await loadMembers();
-              }
+          <button 
+            onClick={addFriend} 
+            style={{ 
+              borderRadius: 8, 
+              padding: "8px 12px", 
+              border: "none", 
+              background: "#2196f3", 
+              color: "#fff", 
+              cursor: "pointer",
+              fontSize: 14
             }}
           >
             Add
           </button>
         </div>
-      </div>
-    </div>
-    {showCreateModal && (
-      <div
-        role="dialog"
-        aria-modal="true"
-        style={{
-          position: "fixed",
-          inset: 0,
-          background: "rgba(0,0,0,0.6)",
-          display: "flex",
-          alignItems: "center",
-          justifyContent: "center",
-          zIndex: 1000,
-        }}
-        onClick={() => setShowCreateModal(false)}
-      >
-        <div
-          style={{ background: "#0f0f0f", border: "1px solid #333", borderRadius: 10, padding: 16, width: 420 }}
-          onClick={(e) => e.stopPropagation()}
-        >
-          <h3 style={{ marginTop: 0 }}>Create channel</h3>
-          <input
-            autoFocus
-            placeholder="Channel name"
-            value={newName}
-            onChange={(e) => setNewName(e.target.value)}
-            style={{ width: "100%", marginBottom: 8 }}
-          />
-          <input
-            placeholder="Members (comma-separated usernames)"
-            value={newMembers}
-            onChange={(e) => setNewMembers(e.target.value)}
-            style={{ width: "100%", marginBottom: 12 }}
-          />
-          <div style={{ display: "flex", justifyContent: "flex-end", gap: 8 }}>
-            <button onClick={() => setShowCreateModal(false)} style={{ background: "#111", color: "#fff", border: "1px solid #333", borderRadius: 8, padding: "6px 10px" }}>Cancel</button>
-            <button onClick={createChannel} style={{ background: "#1f6feb", color: "#fff", border: "1px solid #1f6feb", borderRadius: 8, padding: "6px 10px" }}>Create</button>
+
+        {/* Friend Requests */}
+        {(incoming.length || outgoing.length) ? (
+          <div style={{
+            border: "1px solid #333",
+            borderRadius: 10,
+            padding: 10,
+            background: "#111",
+            marginBottom: 12
+          }}>
+            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 8 }}>
+              <div style={{ fontWeight: 600, color: "#fff", fontSize: 14 }}>Friend requests</div>
+              <div style={{ fontSize: 12, color: "#bbb" }}>
+                {incoming.length} incoming • {outgoing.length} outgoing
+              </div>
+            </div>
+            <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+              {incoming.map((r) => (
+                <div key={`in-${r.id}`} style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8 }}>
+                  <div style={{ color: "#fff", fontSize: 14 }}>@{r.from} wants to add you</div>
+                  <div style={{ display: "flex", gap: 8 }}>
+                    <button onClick={() => acceptRequest(r.id)} style={{ border: "1px solid #333", background: "#151515", color: "#8ef58e", borderRadius: 8, padding: "4px 8px", cursor: "pointer", fontSize: 12 }}>Accept</button>
+                    <button onClick={() => declineRequest(r.id)} style={{ border: "1px solid #333", background: "#151515", color: "#f58e8e", borderRadius: 8, padding: "4px 8px", cursor: "pointer", fontSize: 12 }}>Decline</button>
+                  </div>
+                </div>
+              ))}
+              {outgoing.map((r) => (
+                <div key={`out-${r.id}`} style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8 }}>
+                  <div style={{ color: "#fff", fontSize: 14 }}>Request to @{r.to}</div>
+                  <div style={{ color: "#bbb", fontSize: 12 }}>Pending</div>
+                </div>
+              ))}
+            </div>
           </div>
+        ) : null}
+
+        <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+          {filteredFriends.map((f) => {
+            const g = playingMap[f.username] || gamePool[0];
+            const isActive = activeFriend === f.username;
+            return (
+              <div 
+                key={f.username} 
+                style={{ 
+                  border: "1px solid #333", 
+                  borderRadius: 10, 
+                  padding: 10, 
+                  background: isActive ? "#1a1a1a" : "#111",
+                  cursor: "pointer"
+                }}
+                onClick={() => openChat(f)}
+              >
+                <div style={{ 
+                  display: "flex", 
+                  alignItems: "center", 
+                  justifyContent: "flex-start", 
+                  gap: 8 
+                }}>
+                  <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                    <span style={{ 
+                      width: 8, 
+                      height: 8, 
+                      borderRadius: "50%", 
+                      background: "#4caf50", 
+                      display: "inline-block" 
+                    }} />
+                    <div style={{ 
+                      fontWeight: 600, 
+                      color: "#fff",
+                      fontSize: 14
+                    }}>@{f.username}</div>
+                  </div>
+                </div>
+                <div style={{ 
+                  marginTop: 6, 
+                  fontSize: 13, 
+                  opacity: 0.9,
+                  color: "#fff"
+                }}>
+                  Playing: {" "}
+                  <button
+                    title={`View ${g.name}`}
+                    onClick={(e) => { e.stopPropagation(); navigate(`/home/games/${g.id}`); }}
+                    style={{ 
+                      textDecoration: "underline", 
+                      color: "#8ab4f8", 
+                      background: "transparent", 
+                      border: "none", 
+                      padding: 0, 
+                      cursor: "pointer",
+                      fontSize: 13
+                    }}
+                  >
+                    {g.name}
+                  </button>
+                </div>
+              </div>
+            );
+          })}
+          {!filteredFriends.length ? (
+            <div style={{ 
+              opacity: 0.7, 
+              fontSize: 14, 
+              color: "#fff" 
+            }}>No friends found.</div>
+          ) : null}
         </div>
       </div>
-    )}
-    </>
+
+      {/* Conversation column */}
+      <div style={{ 
+        display: "flex", 
+        flexDirection: "column", 
+        minHeight: 0,
+        background: "#1f1f1f",
+        border: "1px solid #333",
+        borderRadius: 12,
+        padding: 12
+      }}>
+        <div style={{ 
+          display: "flex", 
+          alignItems: "center", 
+          justifyContent: "space-between", 
+          marginBottom: 16,
+          paddingBottom: 12,
+          borderBottom: "1px solid #333"
+        }}>
+          <h2 style={{ 
+            margin: 0,
+            color: "#fff",
+            fontSize: 18
+          }}>
+            {activeFriend ? `Chat with @${activeFriend}` : "Select a friend to chat"}
+          </h2>
+        </div>
+        
+        <div style={{ 
+          flex: 1, 
+          minHeight: 0, 
+          overflow: "auto", 
+          border: "1px solid #333", 
+          padding: 12, 
+          borderRadius: 12, 
+          background: "#0f0f0f" 
+        }}>
+          {messages.map((m) => (
+            <div key={m.id} style={{ marginBottom: 10 }}>
+              <div style={{ 
+                opacity: 0.65, 
+                fontSize: 12,
+                color: "#fff"
+              }}>
+                {new Date(m.createdAt || Date.now()).toLocaleTimeString()}
+              </div>
+              <div style={{ color: "#fff" }}>
+                <strong style={{ color: "#8ab4f8" }}>{m.sender}</strong>: {m.text}
+              </div>
+            </div>
+          ))}
+          <div ref={listEndRef} />
+        </div>
+        
+        <div style={{ marginTop: 12, display: "flex", gap: 8 }}>
+          <input
+            value={text}
+            onChange={(e) => setText(e.target.value)}
+            placeholder={activeFriend ? `Message @${activeFriend}` : "Select a friend to chat"}
+            style={{ 
+              flex: 1, 
+              padding: "10px 12px", 
+              borderRadius: 10, 
+              border: "1px solid #333", 
+              background: "#151515", 
+              color: "#fff",
+              fontSize: 14
+            }}
+            disabled={!activeFriend}
+            onKeyDown={(e) => { if (e.key === "Enter") send(); }}
+          />
+          <button 
+            onClick={send} 
+            disabled={!activeFriend} 
+            style={{ 
+              borderRadius: 10, 
+              padding: "10px 14px", 
+              background: !activeFriend ? "#333" : "#2196f3", 
+              color: "#fff", 
+              border: "none", 
+              cursor: !activeFriend ? "not-allowed" : "pointer",
+              fontSize: 14
+            }}
+          >
+            Send
+          </button>
+        </div>
+      </div>
+    </div>
   );
 }

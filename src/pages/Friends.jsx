@@ -1,40 +1,25 @@
 import React from "react";
 import { useNavigate } from "react-router-dom";
 
+// Friends page now contains full Social (friends + requests + DM chat)
 export default function Friends() {
-  const user = JSON.parse(localStorage.getItem("currentUser") || "null");
+  const user = React.useMemo(() => JSON.parse(localStorage.getItem("currentUser") || "null"), []);
+
   const [friends, setFriends] = React.useState([]);
-  const [name, setName] = React.useState("");
+  const [incoming, setIncoming] = React.useState([]);
+  const [outgoing, setOutgoing] = React.useState([]);
+  const [search, setSearch] = React.useState("");
+  const [addName, setAddName] = React.useState("");
+  const navigate = useNavigate();
+
   const [activeFriend, setActiveFriend] = React.useState(null);
   const [channelId, setChannelId] = React.useState(null);
   const [messages, setMessages] = React.useState([]);
   const [text, setText] = React.useState("");
-  const pollRef = React.useRef(null);
   const listEndRef = React.useRef(null);
+  const pollRef = React.useRef(null);
   const lastIdRef = React.useRef(0);
   const [visible, setVisible] = React.useState(typeof document !== "undefined" ? document.visibilityState === "visible" : true);
-  const navigate = useNavigate();
-
-  React.useEffect(() => {
-    if (!user) return;
-    fetch(`/api/friends/${user.username}`)
-      .then((r) => r.json())
-      .then((rows) => setFriends(rows.map((u) => ({ username: u }))))
-      .catch(() => setFriends([]));
-  }, [user]);
-
-  const add = async () => {
-    if (!name.trim() || !user) return;
-    const res = await fetch(`/api/friends/${user.username}`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ friend: name }),
-    });
-    if (res.ok) {
-      setFriends((f) => [...f, { username: name }]);
-      setName("");
-    }
-  };
 
   const gamePool = React.useMemo(
     () => [
@@ -49,6 +34,31 @@ export default function Friends() {
   );
   const [playingMap, setPlayingMap] = React.useState({});
   const rngPick = React.useCallback(() => gamePool[Math.floor(Math.random() * gamePool.length)], [gamePool]);
+
+  const loadFriends = React.useCallback(() => {
+    if (!user?.username) return;
+    fetch(`/api/friends/${user.username}`)
+      .then((r) => r.json())
+      .then((rows) => setFriends(rows.map((u) => ({ username: u }))))
+      .catch(() => setFriends([]));
+  }, [user]);
+
+  const loadRequests = React.useCallback(() => {
+    if (!user?.username) return;
+    fetch(`/api/friend_requests/${user.username}`)
+      .then((r) => r.json())
+      .then((data) => {
+        setIncoming(Array.isArray(data.incoming) ? data.incoming : []);
+        setOutgoing(Array.isArray(data.outgoing) ? data.outgoing : []);
+      })
+      .catch(() => {
+        setIncoming([]);
+        setOutgoing([]);
+      });
+  }, [user]);
+
+  React.useEffect(() => { loadFriends(); loadRequests(); }, [loadFriends, loadRequests]);
+
   React.useEffect(() => {
     if (!friends.length) return;
     setPlayingMap((prev) => {
@@ -59,6 +69,36 @@ export default function Friends() {
       return next;
     });
   }, [friends, rngPick]);
+
+  const addFriend = async () => {
+    if (!addName.trim() || !user?.username) return;
+    const res = await fetch(`/api/friend_requests`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ from: user.username, to: addName.trim() }),
+    });
+    if (res.ok) {
+      setAddName("");
+      loadRequests();
+    }
+  };
+
+  const acceptRequest = async (reqId) => {
+    if (!reqId) return;
+    const res = await fetch(`/api/friend_requests/${reqId}/accept`, { method: "POST" });
+    if (res.ok) {
+      loadFriends();
+      loadRequests();
+    }
+  };
+
+  const declineRequest = async (reqId) => {
+    if (!reqId) return;
+    const res = await fetch(`/api/friend_requests/${reqId}/decline`, { method: "POST" });
+    if (res.ok) {
+      loadRequests();
+    }
+  };
 
   const ensureDmChannel = async (friendName) => {
     if (!user?.username || !friendName) return null;
@@ -87,7 +127,6 @@ export default function Friends() {
   }, [channelId]);
 
   React.useEffect(() => { loadMessages(); }, [loadMessages]);
-
   React.useEffect(() => { lastIdRef.current = messages.length ? messages[messages.length - 1].id : 0; }, [messages]);
 
   React.useEffect(() => {
@@ -133,36 +172,183 @@ export default function Friends() {
     setMessages((prev) => [...prev, ...more]);
   };
 
+  const filteredFriends = React.useMemo(() => {
+    const q = search.trim().toLowerCase();
+    if (!q) return friends;
+    return friends.filter((f) => f.username.toLowerCase().includes(q));
+  }, [friends, search]);
+
   return (
-    <div style={{ display: "grid", gridTemplateColumns: "320px 1fr", gap: 12, height: "100dvh", minHeight: "100vh" }}>
-      <div style={{ borderRight: "1px solid #333", paddingRight: 12, overflow: "auto" }}>
-        <h1 style={{ marginTop: 0 }}>Friends</h1>
-        <div style={{ display: "flex", gap: 8, marginBottom: 12 }}>
-          <input value={name} onChange={(e) => setName(e.target.value)} placeholder="Add friend by username" style={{ flex: 1 }} />
-          <button onClick={add}>Add</button>
+    <div style={{ 
+      display: "grid", 
+      gridTemplateColumns: "320px 1fr", 
+      gap: 16, 
+      height: "calc(100dvh - 72px - 24px)",
+      overflow: "hidden",
+      color: "#fff",
+      fontFamily: "system-ui, -apple-system, sans-serif"
+    }}>
+      {/* People column */}
+      <div style={{ 
+        background: "#1f1f1f", 
+        border: "1px solid #333", 
+        borderRadius: 12, 
+        padding: 12, 
+        overflow: "auto",
+        minHeight: 0
+      }}>
+        <div style={{ 
+          display: "flex", 
+          alignItems: "center", 
+          justifyContent: "space-between", 
+          marginBottom: 10 
+        }}>
+          <h2 style={{ 
+            margin: 0, 
+            fontSize: 16, 
+            color: "#fff" 
+          }}>People</h2>
         </div>
+        
+        <div style={{ display: "flex", gap: 8, marginBottom: 8 }}>
+          <input
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            placeholder="Search friends"
+            style={{ 
+              flex: 1, 
+              padding: "8px 10px", 
+              borderRadius: 8, 
+              border: "1px solid #333", 
+              background: "#151515", 
+              color: "#fff",
+              fontSize: 14
+            }}
+          />
+        </div>
+        
+        <div style={{ display: "flex", gap: 8, marginBottom: 12 }}>
+          <input
+            value={addName}
+            onChange={(e) => setAddName(e.target.value)}
+            placeholder="Add friend by username"
+            style={{ 
+              flex: 1, 
+              padding: "8px 10px", 
+              borderRadius: 8, 
+              border: "1px solid #333", 
+              background: "#151515", 
+              color: "#fff",
+              fontSize: 14
+            }}
+            onKeyDown={(e) => { if (e.key === "Enter") addFriend(); }}
+          />
+          <button 
+            onClick={addFriend} 
+            style={{ 
+              borderRadius: 8, 
+              padding: "8px 12px", 
+              border: "none", 
+              background: "#2196f3", 
+              color: "#fff", 
+              cursor: "pointer",
+              fontSize: 14
+            }}
+          >
+            Add
+          </button>
+        </div>
+
+        {/* Friend Requests */}
+        {(incoming.length || outgoing.length) ? (
+          <div style={{
+            border: "1px solid #333",
+            borderRadius: 10,
+            padding: 10,
+            background: "#111",
+            marginBottom: 12
+          }}>
+            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 8 }}>
+              <div style={{ fontWeight: 600, color: "#fff", fontSize: 14 }}>Friend requests</div>
+              <div style={{ fontSize: 12, color: "#bbb" }}>
+                {incoming.length} incoming • {outgoing.length} outgoing
+              </div>
+            </div>
+            <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+              {incoming.map((r) => (
+                <div key={`in-${r.id}`} style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8 }}>
+                  <div style={{ color: "#fff", fontSize: 14 }}>@{r.from} wants to add you</div>
+                  <div style={{ display: "flex", gap: 8 }}>
+                    <button onClick={() => acceptRequest(r.id)} style={{ border: "1px solid #333", background: "#151515", color: "#8ef58e", borderRadius: 8, padding: "4px 8px", cursor: "pointer", fontSize: 12 }}>Accept</button>
+                    <button onClick={() => declineRequest(r.id)} style={{ border: "1px solid #333", background: "#151515", color: "#f58e8e", borderRadius: 8, padding: "4px 8px", cursor: "pointer", fontSize: 12 }}>Decline</button>
+                  </div>
+                </div>
+              ))}
+              {outgoing.map((r) => (
+                <div key={`out-${r.id}`} style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8 }}>
+                  <div style={{ color: "#fff", fontSize: 14 }}>Request to @{r.to}</div>
+                  <div style={{ color: "#bbb", fontSize: 12 }}>Pending</div>
+                </div>
+              ))}
+            </div>
+          </div>
+        ) : null}
+
         <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-          {friends.map((f, i) => {
+          {filteredFriends.map((f) => {
             const g = playingMap[f.username] || gamePool[0];
             const isActive = activeFriend === f.username;
             return (
-              <div key={i} style={{ border: "1px solid #333", borderRadius: 10, padding: 10, background: isActive ? "#1a1a1a" : "#111" }}>
-                <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8 }}>
-                  <div style={{ fontWeight: 600 }}>@{f.username}</div>
-                  <button onClick={() => openChat(f)} style={{ border: "1px solid #333", background: "#151515", color: "#fff", borderRadius: 8, padding: "4px 8px" }}>Chat</button>
+              <div 
+                key={f.username} 
+                style={{ 
+                  border: "1px solid #333", 
+                  borderRadius: 10, 
+                  padding: 10, 
+                  background: isActive ? "#1a1a1a" : "#111",
+                  cursor: "pointer"
+                }}
+                onClick={() => openChat(f)}
+              >
+                <div style={{ 
+                  display: "flex", 
+                  alignItems: "center", 
+                  justifyContent: "flex-start", 
+                  gap: 8 
+                }}>
+                  <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                    <span style={{ 
+                      width: 8, 
+                      height: 8, 
+                      borderRadius: "50%", 
+                      background: "#4caf50", 
+                      display: "inline-block" 
+                    }} />
+                    <div style={{ 
+                      fontWeight: 600, 
+                      color: "#fff",
+                      fontSize: 14
+                    }}>@{f.username}</div>
+                  </div>
                 </div>
-                <div style={{ marginTop: 6, fontSize: 13, opacity: 0.9 }}>
+                <div style={{ 
+                  marginTop: 6, 
+                  fontSize: 13, 
+                  opacity: 0.9,
+                  color: "#fff"
+                }}>
                   Playing: {" "}
                   <button
                     title={`View ${g.name}`}
-                    onClick={() => navigate(`/home/games/${g.id}`)}
-                    style={{
-                      textDecoration: "underline",
-                      color: "#8ab4f8",
-                      background: "transparent",
-                      border: "none",
-                      padding: 0,
+                    onClick={(e) => { e.stopPropagation(); navigate(`/home/games/${g.id}`); }}
+                    style={{ 
+                      textDecoration: "underline", 
+                      color: "#8ab4f8", 
+                      background: "transparent", 
+                      border: "none", 
+                      padding: 0, 
                       cursor: "pointer",
+                      fontSize: 13
                     }}
                   >
                     {g.name}
@@ -171,32 +357,115 @@ export default function Friends() {
               </div>
             );
           })}
+          {!filteredFriends.length ? (
+            <div style={{ 
+              opacity: 0.7, 
+              fontSize: 14, 
+              color: "#fff" 
+            }}>No friends found.</div>
+          ) : null}
         </div>
       </div>
 
-      <div style={{ display: "flex", flexDirection: "column", minHeight: 0 }}>
-        <h2 style={{ marginTop: 0 }}>{activeFriend ? `Chat with @${activeFriend}` : "Select a friend to chat"}</h2>
-        <div style={{ flex: 1, minHeight: 0, overflow: "auto", border: "1px solid #333", padding: 8, borderRadius: 8, background: "#0f0f0f" }}>
-          {messages.map((m) => (
-            <div key={m.id} style={{ marginBottom: 8 }}>
-              <div style={{ opacity: 0.8, fontSize: 12 }}>{new Date(m.createdAt || Date.now()).toLocaleTimeString()}</div>
-              <div>
-                <strong>{m.sender}:</strong> {m.text}
+      {/* Conversation column */}
+      <div style={{ 
+        display: "flex", 
+        flexDirection: "column", 
+        minHeight: 0,
+        background: "#1f1f1f",
+        border: "1px solid #333",
+        borderRadius: 12,
+        padding: 12
+      }}>
+        <div style={{ 
+          display: "flex", 
+          alignItems: "center", 
+          justifyContent: "space-between", 
+          marginBottom: 16,
+          paddingBottom: 12,
+          borderBottom: "1px solid #333"
+        }}>
+          <h2 style={{ 
+            margin: 0,
+            color: "#fff",
+            fontSize: 18
+          }}>
+            {activeFriend ? `Chat with @${activeFriend}` : "Select a friend to chat"}
+          </h2>
+        </div>
+        
+        <div style={{ 
+          flex: 1, 
+          minHeight: 0, 
+          overflow: "auto", 
+          border: "1px solid #333", 
+          padding: 12, 
+          borderRadius: 12, 
+          background: "#0f0f0f",
+          display: "flex",
+          flexDirection: "column",
+          gap: 8
+        }}>
+          {messages.map((m) => {
+            const me = (user?.username || "").toLowerCase();
+            const sender = String(m.sender || "");
+            const isMine = sender.toLowerCase() === me;
+            const label = isMine ? "You" : `@${sender}`;
+            return (
+              <div
+                key={m.id}
+                style={{
+                  alignSelf: isMine ? "flex-end" : "flex-start",
+                  background: isMine ? "#1f6feb" : "#1a1a1a",
+                  color: "#fff",
+                  border: "1px solid #333",
+                  borderRadius: 10,
+                  padding: "8px 10px",
+                  maxWidth: "75%"
+                }}
+              >
+                <div style={{ opacity: 0.75, fontSize: 11, marginBottom: 4 }}>
+                  {new Date(m.createdAt || Date.now()).toLocaleTimeString()} • <strong style={{ color: "#cfe2ff" }}>{label}</strong>
+                </div>
+                <div style={{ whiteSpace: "pre-wrap", wordBreak: "break-word" }}>{m.text}</div>
               </div>
-            </div>
-          ))}
+            );
+          })}
           <div ref={listEndRef} />
         </div>
-        <div style={{ marginTop: 8, display: "flex", gap: 8 }}>
+        
+        <div style={{ marginTop: 12, display: "flex", gap: 8 }}>
           <input
             value={text}
             onChange={(e) => setText(e.target.value)}
             placeholder={activeFriend ? `Message @${activeFriend}` : "Select a friend to chat"}
-            style={{ flex: 1 }}
+            style={{ 
+              flex: 1, 
+              padding: "10px 12px", 
+              borderRadius: 10, 
+              border: "1px solid #333", 
+              background: "#151515", 
+              color: "#fff",
+              fontSize: 14
+            }}
             disabled={!activeFriend}
             onKeyDown={(e) => { if (e.key === "Enter") send(); }}
           />
-          <button onClick={send} disabled={!activeFriend}>Send</button>
+          <button 
+            onClick={send} 
+            disabled={!activeFriend} 
+            style={{ 
+              borderRadius: 10, 
+              padding: "10px 14px", 
+              background: !activeFriend ? "#333" : "#2196f3", 
+              color: "#fff", 
+              border: "none", 
+              cursor: !activeFriend ? "not-allowed" : "pointer",
+              fontSize: 14
+            }}
+          >
+            Send
+          </button>
         </div>
       </div>
     </div>

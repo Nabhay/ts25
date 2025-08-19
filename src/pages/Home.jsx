@@ -1,6 +1,6 @@
 import React from "react";
 import { Outlet, NavLink, useNavigate } from "react-router-dom";
-import { Gamepad2, AppWindow, ShoppingBag, MessagesSquare, Users } from "lucide-react";
+import { Gamepad2, AppWindow, ShoppingBag, Users } from "lucide-react";
 
 const linkStyle = ({ isActive }) => ({
   width: 48,
@@ -24,8 +24,8 @@ export default function HomeLayout() {
   }, [user, navigate]);
 
   return (
-  <div style={{ display: "flex", minHeight: "100vh", width: "100%" }}>
-  <aside
+    <div style={{ display: "flex", minHeight: "100vh", width: "100%" }}>
+      <aside
         style={{
           position: "fixed",
           top: 0,
@@ -39,7 +39,7 @@ export default function HomeLayout() {
           flexDirection: "column",
           alignItems: "center",
           justifyContent: "center",
-          background: "#0f0f0f",
+          background: "transparent",
           zIndex: 10,
         }}
       >
@@ -48,20 +48,20 @@ export default function HomeLayout() {
           title="Home"
           aria-label="Home"
           style={{
-    width: 48,
-    height: 48,
-    borderRadius: 10,
-    border: "1px solid #333",
-    background: "#151515",
-    color: "#fff",
-    display: "flex",
-    alignItems: "center",
-    justifyContent: "center",
-    marginBottom: 12,
-    cursor: "pointer",
+            width: 48,
+            height: 48,
+            borderRadius: 10,
+            border: "1px solid #333",
+            background: "#151515",
+            color: "#fff",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            marginBottom: 12,
+            cursor: "pointer",
           }}
         >
-  <img src="/logo.svg" alt="Home" style={{ width: 24, height: 24 }} />
+          <img src="/logo.svg" alt="Home" style={{ width: 24, height: 24 }} />
         </button>
         <nav style={{ display: "flex", flexDirection: "column", gap: 8 }}>
           <NavLink to="games" style={linkStyle} title="Games" aria-label="Games">
@@ -73,15 +73,12 @@ export default function HomeLayout() {
           <NavLink to="store" style={linkStyle} title="Store" aria-label="Store">
             <ShoppingBag />
           </NavLink>
-          <NavLink to="chat" style={linkStyle} title="Chat" aria-label="Chat">
-            <MessagesSquare />
-          </NavLink>
           <NavLink to="friends" style={linkStyle} title="Friends" aria-label="Friends">
             <Users />
           </NavLink>
         </nav>
       </aside>
-  <main style={{ flex: 1, padding: 24, width: "100%", overflow: "auto", marginLeft: 84, paddingTop: 72 }}>
+      <main style={{ flex: 1, padding: 24, width: "100%", overflow: "auto", marginLeft: 84, paddingTop: 72 }}>
         <header
           style={{
             position: "fixed",
@@ -95,7 +92,7 @@ export default function HomeLayout() {
             justifyContent: "center",
             gap: 12,
             padding: "0 24px",
-            background: "#0f0f0f",
+            background: "transparent",
             borderBottom: "1px solid #333",
           }}
         >

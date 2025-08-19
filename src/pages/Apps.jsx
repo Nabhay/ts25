@@ -1,30 +1,30 @@
 import React from "react";
-import { Link } from "react-router-dom";
 
 const apps = [
-  { id: "netflix", name: "Netflix", icon: "https://cdn.simpleicons.org/netflix/ffffff" },
-  { id: "youtube", name: "YouTube", icon: "https://cdn.simpleicons.org/youtube/ffffff" },
-  { id: "hbo", name: "HBO", icon: "https://cdn.simpleicons.org/hbo/ffffff" },
-  { id: "spotify", name: "Spotify", icon: "https://cdn.simpleicons.org/spotify/ffffff" },
-  { id: "twitch", name: "Twitch", icon: "https://cdn.simpleicons.org/twitch/ffffff" },
-  { id: "crunchyroll", name: "Crunchyroll", icon: "https://cdn.simpleicons.org/crunchyroll/ffffff" },
-  { id: "paramountplus", name: "Paramount+", icon: "https://cdn.simpleicons.org/paramountplus/ffffff" },
-  { id: "plex", name: "Plex", icon: "https://cdn.simpleicons.org/plex/ffffff" },
-  { id: "vimeo", name: "Vimeo", icon: "https://cdn.simpleicons.org/vimeo/ffffff" },
-  { id: "appletv", name: "Apple TV", icon: "https://cdn.simpleicons.org/appletv/ffffff" },
-  { id: "tubi", name: "Tubi", icon: "https://cdn.simpleicons.org/tubi/ffffff" },
-  { id: "max", name: "Max", icon: "https://cdn.simpleicons.org/max/ffffff" },
+  { id: "netflix", name: "Netflix", icon: "https://cdn.simpleicons.org/netflix/E50914" },
+  { id: "youtube", name: "YouTube", icon: "https://cdn.simpleicons.org/youtube/FF0000" },
+  { id: "hbo", name: "HBO", icon: "https://cdn.simpleicons.org/hbo/FFFFFF" },
+  { id: "spotify", name: "Spotify", icon: "https://cdn.simpleicons.org/spotify/1DB954" },
+  { id: "twitch", name: "Twitch", icon: "https://cdn.simpleicons.org/twitch/9146FF" },
+  { id: "crunchyroll", name: "Crunchyroll", icon: "https://cdn.simpleicons.org/crunchyroll/F47521" },
+  { id: "paramountplus", name: "Paramount+", icon: "https://cdn.simpleicons.org/paramountplus/0064E1" },
+  { id: "plex", name: "Plex", icon: "https://cdn.simpleicons.org/plex/E5A00D" },
+  { id: "vimeo", name: "Vimeo", icon: "https://cdn.simpleicons.org/vimeo/1AB7EA" },
+  { id: "appletv", name: "Apple TV", icon: "https://cdn.simpleicons.org/appletv/FFFFFF" },
+  { id: "tubi", name: "Tubi", icon: "https://cdn.simpleicons.org/tubi/FF6B00" },
+  { id: "max", name: "Max", icon: "https://cdn.simpleicons.org/max/0026FF" },
 ];
 
 export default function Apps() {
   return (
-    <div>
+    <div style={{ width: "100%", maxWidth: 1200, margin: "0 auto", padding: "0 16px" }}>
       <h1>Apps</h1>
       <div
         style={{
           display: "grid",
-          gridTemplateColumns: "repeat(auto-fill, minmax(140px, 1fr))",
-          gap: 12,
+          gridTemplateColumns: "repeat(4, minmax(0, 1fr))",
+          gap: 30,
+          marginTop: 16,
         }}
       >
         {apps.map((a) => (
@@ -45,11 +45,13 @@ export default function Apps() {
             }}
             title={a.name}
           >
-            <img
-              src={a.icon}
-              alt={`${a.name} logo`}
-              style={{ width: 48, height: 48, objectFit: "contain" }}
-            />
+            <div style={{ width: 64, height: 64, display: "grid", placeItems: "center" }}>
+              <img
+                src={a.icon}
+                alt={`${a.name} logo`}
+                style={{ maxWidth: "70%", maxHeight: "70%", objectFit: "contain", display: "block" }}
+              />
+            </div>
             <div style={{ fontSize: 14, textAlign: "center" }}>{a.name}</div>
           </button>
         ))}

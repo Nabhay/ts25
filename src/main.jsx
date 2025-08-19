@@ -1,6 +1,6 @@
 import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
-import { BrowserRouter, Routes, Route } from "react-router-dom";
+import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
 import { ThemeProvider, createTheme } from "@mui/material/styles";
 import CssBaseline from "@mui/material/CssBaseline";
 import "./index.css";
@@ -12,7 +12,7 @@ import Games from "./pages/Games.jsx";
 import GameDetails from "./pages/GameDetails.jsx";
 import Apps from "./pages/Apps.jsx";
 import Store from "./pages/Store.jsx";
-import Chat from "./pages/Chat.jsx";
+import Checkout from "./pages/Checkout.jsx";
 import Friends from "./pages/Friends.jsx";
 import Library from "./pages/Library.jsx";
 
@@ -32,6 +32,19 @@ const darkTheme = createTheme({
     },
   },
   components: {
+    MuiCssBaseline: {
+      styleOverrides: {
+        body: {
+          backgroundImage:
+            "linear-gradient(135deg, rgba(44, 24, 66, 0.5), rgba(66, 11, 20, 0.5)), #0f0f0f",
+          backgroundAttachment: "fixed",
+          backgroundRepeat: "no-repeat",
+          backgroundSize: "cover",
+          backgroundColor: "transparent",
+          minHeight: "100vh",
+        },
+      },
+    },
     MuiOutlinedInput: {
       styleOverrides: {
         root: {
@@ -60,13 +73,15 @@ createRoot(document.getElementById("root")).render(
         <Routes>
           <Route path="/" element={<App />} />
           <Route path="/auth" element={<Auth />} />
+          {/* Ensure direct /chat URL uses the Friends page within the Home layout */}
+          <Route path="/chat" element={<Navigate to="/home/friends" replace />} />
           <Route path="/home" element={<HomeLayout />}>
             <Route index element={<Games />} />
             <Route path="games" element={<Games />} />
             <Route path="games/:gameId" element={<GameDetails />} />
             <Route path="apps" element={<Apps />} />
             <Route path="store" element={<Store />} />
-            <Route path="chat" element={<Chat />} />
+            <Route path="checkout" element={<Checkout />} />
             <Route path="friends" element={<Friends />} />
             <Route path="library" element={<Library />} />
           </Route>

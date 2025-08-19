@@ -299,6 +299,17 @@ def init_db():
     )
     c.execute(
         """
+        CREATE TABLE IF NOT EXISTS friend_requests (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            from_username TEXT NOT NULL,
+            to_username TEXT NOT NULL,
+            status TEXT NOT NULL DEFAULT 'pending',
+            created_at TEXT DEFAULT (datetime('now'))
+        )
+        """
+    )
+    c.execute(
+        """
         CREATE TABLE IF NOT EXISTS library (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             owner_username TEXT NOT NULL,
@@ -492,6 +503,7 @@ def games_list():
                         "id": g.get("id"),
                         "name": g.get("name"),
                         "coverUrl": f"https://images.igdb.com/igdb/image/upload/t_cover_big/{cover}.jpg",
+                        "popularity": float(g.get("total_rating_count") or 0.0),
                     }
                 )
             username = request.args.get("username")
@@ -530,10 +542,21 @@ def friends(username):
         friend_username = data.get("friend")
         if not friend_username:
             return jsonify({"error": "friend required"}), 400
-        c.execute(
-            "INSERT INTO friends (owner_username, friend_username) VALUES (?, ?)",
-            (username, friend_username),
-        )
+        # Legacy direct add (kept for backward compat): add both directions and ignore duplicates
+        try:
+            c.execute(
+                "INSERT INTO friends (owner_username, friend_username) VALUES (?, ?)",
+                (username, friend_username),
+            )
+        except Exception:
+            pass
+        try:
+            c.execute(
+                "INSERT INTO friends (owner_username, friend_username) VALUES (?, ?)",
+                (friend_username, username),
+            )
+        except Exception:
+            pass
         conn.commit()
     c.execute(
         "SELECT friend_username FROM friends WHERE owner_username = ?",
@@ -542,6 +565,114 @@ def friends(username):
     rows = [r[0] for r in c.fetchall()]
     conn.close()
     return jsonify(rows)
+
+# Create a friend request
+@app.route("/friend_requests", methods=["POST"])
+def create_friend_request():
+    data = request.get_json() or {}
+    from_user = (data.get("from") or "").strip()
+    to_user = (data.get("to") or "").strip()
+    if not from_user or not to_user:
+        return jsonify({"error": "from and to required"}), 400
+    if from_user == to_user:
+        return jsonify({"error": "cannot add yourself"}), 400
+    conn = sqlite3.connect(DB_NAME)
+    c = conn.cursor()
+    # If already friends, short-circuit
+    c.execute(
+        "SELECT 1 FROM friends WHERE owner_username = ? AND friend_username = ? LIMIT 1",
+        (from_user, to_user),
+    )
+    if c.fetchone():
+        conn.close()
+        return jsonify({"status": "already_friends"}), 200
+    # Avoid duplicate pending requests in either direction
+    c.execute(
+        """
+        SELECT id, status FROM friend_requests
+        WHERE (from_username = ? AND to_username = ?) OR (from_username = ? AND to_username = ?)
+        ORDER BY id DESC LIMIT 1
+        """,
+        (from_user, to_user, to_user, from_user),
+    )
+    row = c.fetchone()
+    if row and (row[1] == "pending"):
+        conn.close()
+        return jsonify({"status": "already_pending", "id": row[0]}), 200
+    c.execute(
+        "INSERT INTO friend_requests (from_username, to_username, status) VALUES (?, ?, 'pending')",
+        (from_user, to_user),
+    )
+    req_id = c.lastrowid
+    conn.commit()
+    conn.close()
+    return jsonify({"id": req_id, "from": from_user, "to": to_user, "status": "pending"}), 201
+
+# List incoming/outgoing friend requests for a user
+@app.route("/friend_requests/<username>", methods=["GET"])
+def list_friend_requests(username: str):
+    only = (request.args.get("status") or "pending").strip().lower()
+    conn = sqlite3.connect(DB_NAME)
+    c = conn.cursor()
+    if only == "all":
+        c.execute("SELECT id, from_username, to_username, status, created_at FROM friend_requests WHERE to_username = ? ORDER BY id DESC", (username,))
+        incoming = [{"id": r[0], "from": r[1], "to": r[2], "status": r[3], "createdAt": r[4]} for r in c.fetchall()]
+        c.execute("SELECT id, from_username, to_username, status, created_at FROM friend_requests WHERE from_username = ? ORDER BY id DESC", (username,))
+        outgoing = [{"id": r[0], "from": r[1], "to": r[2], "status": r[3], "createdAt": r[4]} for r in c.fetchall()]
+    else:
+        c.execute("SELECT id, from_username, to_username, status, created_at FROM friend_requests WHERE to_username = ? AND status = 'pending' ORDER BY id DESC", (username,))
+        incoming = [{"id": r[0], "from": r[1], "to": r[2], "status": r[3], "createdAt": r[4]} for r in c.fetchall()]
+        c.execute("SELECT id, from_username, to_username, status, created_at FROM friend_requests WHERE from_username = ? AND status = 'pending' ORDER BY id DESC", (username,))
+        outgoing = [{"id": r[0], "from": r[1], "to": r[2], "status": r[3], "createdAt": r[4]} for r in c.fetchall()]
+    conn.close()
+    return jsonify({"incoming": incoming, "outgoing": outgoing})
+
+# Accept a friend request
+@app.route("/friend_requests/<int:req_id>/accept", methods=["POST"])
+def accept_friend_request(req_id: int):
+    conn = sqlite3.connect(DB_NAME)
+    c = conn.cursor()
+    c.execute("SELECT from_username, to_username, status FROM friend_requests WHERE id = ?", (req_id,))
+    row = c.fetchone()
+    if not row:
+        conn.close()
+        return jsonify({"error": "not found"}), 404
+    if row[2] != "pending":
+        conn.close()
+        return jsonify({"status": row[2]}), 200
+    from_user, to_user = row[0], row[1]
+    # Mark accepted
+    c.execute("UPDATE friend_requests SET status = 'accepted' WHERE id = ?", (req_id,))
+    # Add both directions to friends, ignoring duplicates
+    try:
+        c.execute("INSERT INTO friends (owner_username, friend_username) VALUES (?, ?)", (from_user, to_user))
+    except Exception:
+        pass
+    try:
+        c.execute("INSERT INTO friends (owner_username, friend_username) VALUES (?, ?)", (to_user, from_user))
+    except Exception:
+        pass
+    conn.commit()
+    conn.close()
+    return jsonify({"status": "accepted", "from": from_user, "to": to_user})
+
+# Decline a friend request
+@app.route("/friend_requests/<int:req_id>/decline", methods=["POST"])
+def decline_friend_request(req_id: int):
+    conn = sqlite3.connect(DB_NAME)
+    c = conn.cursor()
+    c.execute("SELECT from_username, to_username, status FROM friend_requests WHERE id = ?", (req_id,))
+    row = c.fetchone()
+    if not row:
+        conn.close()
+        return jsonify({"error": "not found"}), 404
+    if row[2] != "pending":
+        conn.close()
+        return jsonify({"status": row[2]}), 200
+    c.execute("UPDATE friend_requests SET status = 'declined' WHERE id = ?", (req_id,))
+    conn.commit()
+    conn.close()
+    return jsonify({"status": "declined"})
 
 @app.route("/library/<username>", methods=["GET", "POST"])
 def library(username):

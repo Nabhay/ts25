@@ -8,6 +8,7 @@ export default function Store() {
   const [gHasMore, setGHasMore] = React.useState(true);
   const [gLoading, setGLoading] = React.useState(false);
   const [sort, setSort] = React.useState("rating");
+  const [ownedFilter, setOwnedFilter] = React.useState("not"); // not | owned | all
   const PAGE_SIZE = 60;
 
   const gOffsetRef = React.useRef(0);
@@ -123,22 +124,37 @@ export default function Store() {
     }
   };
 
+  const goToCheckout = (item) => {
+    navigate("/home/checkout", { state: { item } });
+  };
+
+  const displayGames = React.useMemo(() => {
+    let list = games;
+    if (ownedFilter === "not") list = list.filter((g) => !g.installed);
+    else if (ownedFilter === "owned") list = list.filter((g) => !!g.installed);
+    return list;
+  }, [games, ownedFilter]);
+
   return (
-    <div>
+    <div style={{ maxWidth: 1200, margin: "0 auto", padding: "0 16px" }}>
       <h1>Store</h1>
 
-      <div style={{ display: "flex", gap: 12, alignItems: "center", marginBottom: 16 }}>
-        <label>Sort games by:</label>
+      <div style={{ display: "flex", gap: 12, alignItems: "center", marginBottom: 16, flexWrap: "wrap" }}>
+        <label>Filter:</label>
+        <select
+          value={ownedFilter}
+          onChange={(e) => setOwnedFilter(e.target.value)}
+          style={{ borderRadius: 8, padding: "6px 10px", background: "#151515", color: "#fff", border: "1px solid #333" }}
+        >
+          <option value="not">Not owned</option>
+          <option value="owned">Owned</option>
+          <option value="all">All</option>
+        </select>
+        <label style={{ marginLeft: 8 }}>Sort games by:</label>
         <select
           value={sort}
           onChange={(e) => setSort(e.target.value)}
-          style={{
-            borderRadius: 8,
-            padding: "6px 10px",
-            background: "#151515",
-            color: "#fff",
-            border: "1px solid #333",
-          }}
+          style={{ borderRadius: 8, padding: "6px 10px", background: "#151515", color: "#fff", border: "1px solid #333" }}
         >
           <option value="rating">Player rating</option>
           <option value="price_asc">Price (low to high)</option>
@@ -146,11 +162,11 @@ export default function Store() {
         </select>
       </div>
 
-      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(160px, 1fr))", gap: 12 }}>
-        {games.length === 0 ? (
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(220px, 260px))", justifyContent: "center", gap: 30, marginTop: 16 }}>
+        {displayGames.length === 0 ? (
           <div style={{ opacity: 0.7 }}>No games found.</div>
         ) : (
-          games.map((g) => (
+          displayGames.map((g) => (
             <div
               key={g.id}
               style={{
@@ -158,34 +174,34 @@ export default function Store() {
                 borderRadius: 10,
                 overflow: "hidden",
                 position: "relative",
-                height: 320,
-                paddingBottom: 48,
                 display: "flex",
                 flexDirection: "column",
               }}
             >
-              <Link to={`/home/games/${g.id}`} style={{ textDecoration: "none", color: "inherit", flex: 1 }}>
-                <img src={g.coverUrl} alt={g.name} style={{ width: "100%", height: 200, objectFit: "cover" }} />
-                {g.installed ? (
-                  <div style={{ position: "absolute", top: 8, left: 8, background: "#2e7d32", color: "#fff", padding: "2px 6px", borderRadius: 6, fontSize: 12 }}>
-                    Owned
-                  </div>
-                ) : null}
-                <div style={{ padding: 8 }}>
-                  <div style={{ fontWeight: 600, lineHeight: 1.2, minHeight: 32, display: "-webkit-box", WebkitLineClamp: 2, WebkitBoxOrient: "vertical", overflow: "hidden" }}>{g.name}</div>
-                  <div style={{ opacity: 0.8, fontSize: 12 }}>
+              <Link to={`/home/games/${g.id}`} style={{ textDecoration: "none", color: "inherit" }}>
+                <div style={{ background: "#0f0f0f", position: "relative" }}>
+                  <img src={g.coverUrl} alt={g.name} style={{ width: "100%", height: "auto", display: "block" }} />
+                  {g.installed ? (
+                    <div style={{ position: "absolute", top: 8, left: 8, background: "#2e7d32", color: "#fff", padding: "2px 6px", borderRadius: 6, fontSize: 12 }}>
+                      Owned
+                    </div>
+                  ) : null}
+                </div>
+              </Link>
+              <div style={{ padding: 10, display: "grid", gridTemplateColumns: "1fr auto", gap: 8, alignItems: "center", minHeight: 92 }}>
+                <div>
+                  <div style={{ fontWeight: 600, lineHeight: 1.2, display: "-webkit-box", WebkitLineClamp: 2, WebkitBoxOrient: "vertical", overflow: "hidden" }}>{g.name}</div>
+                  <div style={{ opacity: 0.8, fontSize: 12, marginTop: 2 }}>
                     Rating: {g.rating ? g.rating.toFixed(0) : "N/A"} • ${g.price.toFixed(2)}
                   </div>
                 </div>
-              </Link>
-              <div style={{ position: "absolute", left: 8, bottom: 8 }}>
-                <button
-                  onClick={() => addToLibrary(g)}
-                  disabled={Boolean(g.installed)}
-                  style={{ borderRadius: 8, padding: "6px 10px", opacity: g.installed ? 0.6 : 1, cursor: g.installed ? "not-allowed" : "pointer" }}
-                >
-                  {g.installed ? "Owned" : "Buy"}
-                </button>
+                <div>
+                  {g.installed ? (
+                    <button disabled style={{ borderRadius: 8, padding: "6px 10px", opacity: 0.6, cursor: "not-allowed" }}>Owned</button>
+                  ) : (
+                    <button onClick={() => goToCheckout(g)} style={{ borderRadius: 8, padding: "6px 10px" }} title="Checkout">Buy</button>
+                  )}
+                </div>
               </div>
             </div>
           ))
